@@ -1,0 +1,79 @@
+#cloud-config
+# Creates a new user named "andrew" with password-less sudo capabilities
+# SSH is available on port 4444
+#
+# Log is saved as /var/log/cloud-init-output.log
+#
+# Check these things manually first:
+#  - Make sure the R apt source matches the system
+#    (see https://cran.r-project.org/bin/linux/ubuntu/README for names)
+#  - If running on smaller droplet uncomment the section that enlarges swapfile
+#
+# Help from:
+#  - http://deanattali.com/2015/05/09/setup-rstudio-shiny-server-digital-ocean/
+#  - https://www.digitalocean.com/community/tutorials/how-to-set-up-r-on-ubuntu-14-04
+#  - https://gist.github.com/mdlincoln/1f40f4e88ce32c55b5f3
+#  - https://github.com/rocker-org/hadleyverse/blob/master/Dockerfile
+
+apt_sources:
+  - source: deb https://cran.rstudio.com/bin/linux/ubuntu wily/
+    keyid: E084DAB9
+package_upgrade: true
+packages:
+  - fail2ban
+  - curl
+  # Packages for Python
+  - python3-pip
+  # Packages for R
+  - r-base-dev
+  - libcurl4-gnutls-dev
+  - libxml2-dev
+  - libssl-dev
+users:
+  - name: andrew
+    ssh-authorized-keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAzbbeV122OVlEDsYjj5qXrvt6LYIYFdcLUnZtvcpjGdxQe6X6U3AUkLlBIDMiRGWJf/hjBnYwMEyea9DCaRdyXOSdjPT1pxl7F1Rt9Ws7+fYgO0/3CiI5hW5V6Az0z/8qL41f+YYeIw6CsXqFM7FTl1eFVNOpLAKwTi1+8tkuEvFTNrIVkcMWeKbCryN//SuyFZzmD09h/JBn2aP3XJMadbx+mLf6WkN6r4N9rvSgptQQuI6zPPc2OQLkjqF6LsTt8gC0Lvd4n7B45tk7k976QtdgyGXTL3uLv4DsPJpVTn/aE4GcJLrVKtRtQZYtW4PqWji5Ow6PhcSUXfPwKHKM7Q== Main computer
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCfYbIY4pcpG0Dfg3vVaR+g2F+xl9sopsAIQIMaJVZBBOTyT98j5zuVc7XJ8krr/rRyUvSyB1/GFkSNhv4X9OxQw74H9KmTiz6sXS7U94o8IuDbOpRvEbva/hCuDSl02fzThP/X0FDO6GC7gYfr/CUMFMmQxs4hOdbQ7p7/eOMfIlQsIQXZef/30a27VQnIZSuKvm7SxMv+1TZE1ptahWT02uyTFCqJjKNH+r3fTLJKxHt12eIAvqTi8fXVG8RqW4PF4s9vMtfAXkBd8W0eLAs+uU59iEzFjmesIBpFFGqUujOma+iguFiRbzN0f1l6iefTYfI37Ytyoz8Fwf8y/Ivh Serverauditor on iPhone
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCiEntj/MflR+ecnzSPfGllxNzngOqS2lk8OJy7eAIUqeZ5jMsdA+y5z/r+P8re8iB5f4o6ka31UEp/f63+8aqKeBtZWC7jKmjll/uVxI6DJvOn61ABWFPVzEjsTjgCCY7ge1sFBC8Y2Ec/1DxB4UiPaV/Ohhjxdym24ZdSJwvmvOLwrQkXqDNSNKGcoSQU22ozjh5CZzl5nE8ZSnP/Xm7JOeBpzv8WvDPoUKdyzkKp3PCMs12wk86l93atzl74mE4vkvGkwtqRwPJMC68BVErqYVMOVYuMvXGCe2l0qT+0jJIi3p/NVKtu+9pf0fHIp4XmTmtDgsqRVxh66jFpUnoj Serverauditor on iPad
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    groups: sudo
+    shell: /bin/bash
+write_files:
+  - path: /etc/fail2ban/jail.local
+    content: |
+        [DEFAULT]
+        # Ban hosts for one hour:
+        bantime = 3600
+        #
+        # Override /etc/fail2ban/jail.d/00-firewalld.conf:
+        banaction = iptables-multiport
+        #
+        [sshd]
+        enabled = true
+        port    = 4444
+        logpath = %(sshd_log)s
+runcmd:
+  # Configure SSH and fail2ban
+  - sed -i -e '/^Port/s/^.*$/Port 4444/' /etc/ssh/sshd_config
+  - sed -i -e '/^PermitRootLogin/s/^.*$/PermitRootLogin no/' /etc/ssh/sshd_config
+  - sed -i -e '$aAllowUsers andrew' /etc/ssh/sshd_config
+  - sed -i -e '$anospoof on' /etc/host.conf
+  - service ssh restart
+  - service fail2ban restart
+  # Get rid of message about how to run sudo
+  - install -m 644 -o andrew /dev/null /home/andrew/.sudo_as_admin_successful
+  # ### Python stuff ###
+  - pip3 install beautifulsoup4 tinydb requests
+  - pip3 install numpy
+  - pip3 install pandas
+  # ### R stuff ###
+  # Bigger swap file for R on smaller machines
+  - /bin/dd if=/dev/zero of=/var/swap.1 bs=1M count=1024
+  - /sbin/mkswap /var/swap.1
+  - /sbin/swapon /var/swap.1
+  - sh -c 'echo "/var/swap.1 swap swap defaults 0 0 " >> /etc/fstab'
+  # Devtools
+  - R -e 'install.packages(c("devtools"), repos="https://cran.rstudio.com/")'
+  # Hadleyverse and close friends
+  - R -e 'install.packages(c("broom", "DiagrammeR", "devtools", "dplyr", "ggplot2", "ggthemes", "haven", "httr", "knitr", "lubridate", "packrat", "pryr", "purrr", "reshape2", "rmarkdown", "rvest", "readr", "readxl", "testthat", "tidyr", "shiny", "stringr", "xml2"), repos="https://cran.rstudio.com/", dependencies=TRUE)'
+

@@ -1,0 +1,48 @@
+#cloud-config
+# Creates a new user named "vpn" with password-less sudo capabilities
+# SSH is available on port 4444
+#
+# Log is saved as /var/log/cloud-init-output.log
+#
+# OpenVPN is configured automatically and the client certificate is available at /home/vpn/client.ovpn
+# Transfer using scp like so:
+#     scp -P 4444 vpn@IPADDRESS:/home/vpn/client.ovpn client.ovpn
+
+package_upgrade: true
+packages:
+  - fail2ban
+  - curl
+users:
+  - name: vpn
+    ssh-authorized-keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAzbbeV122OVlEDsYjj5qXrvt6LYIYFdcLUnZtvcpjGdxQe6X6U3AUkLlBIDMiRGWJf/hjBnYwMEyea9DCaRdyXOSdjPT1pxl7F1Rt9Ws7+fYgO0/3CiI5hW5V6Az0z/8qL41f+YYeIw6CsXqFM7FTl1eFVNOpLAKwTi1+8tkuEvFTNrIVkcMWeKbCryN//SuyFZzmD09h/JBn2aP3XJMadbx+mLf6WkN6r4N9rvSgptQQuI6zPPc2OQLkjqF6LsTt8gC0Lvd4n7B45tk7k976QtdgyGXTL3uLv4DsPJpVTn/aE4GcJLrVKtRtQZYtW4PqWji5Ow6PhcSUXfPwKHKM7Q== Main computer
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCfYbIY4pcpG0Dfg3vVaR+g2F+xl9sopsAIQIMaJVZBBOTyT98j5zuVc7XJ8krr/rRyUvSyB1/GFkSNhv4X9OxQw74H9KmTiz6sXS7U94o8IuDbOpRvEbva/hCuDSl02fzThP/X0FDO6GC7gYfr/CUMFMmQxs4hOdbQ7p7/eOMfIlQsIQXZef/30a27VQnIZSuKvm7SxMv+1TZE1ptahWT02uyTFCqJjKNH+r3fTLJKxHt12eIAvqTi8fXVG8RqW4PF4s9vMtfAXkBd8W0eLAs+uU59iEzFjmesIBpFFGqUujOma+iguFiRbzN0f1l6iefTYfI37Ytyoz8Fwf8y/Ivh Serverauditor on iPhone
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCiEntj/MflR+ecnzSPfGllxNzngOqS2lk8OJy7eAIUqeZ5jMsdA+y5z/r+P8re8iB5f4o6ka31UEp/f63+8aqKeBtZWC7jKmjll/uVxI6DJvOn61ABWFPVzEjsTjgCCY7ge1sFBC8Y2Ec/1DxB4UiPaV/Ohhjxdym24ZdSJwvmvOLwrQkXqDNSNKGcoSQU22ozjh5CZzl5nE8ZSnP/Xm7JOeBpzv8WvDPoUKdyzkKp3PCMs12wk86l93atzl74mE4vkvGkwtqRwPJMC68BVErqYVMOVYuMvXGCe2l0qT+0jJIi3p/NVKtu+9pf0fHIp4XmTmtDgsqRVxh66jFpUnoj Serverauditor on iPad
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    groups: sudo
+    shell: /bin/bash
+write_files:
+  - path: /etc/fail2ban/jail.local
+    content: |
+        [DEFAULT]
+        # Ban hosts for one hour:
+        bantime = 3600
+        #
+        # Override /etc/fail2ban/jail.d/00-firewalld.conf:
+        banaction = iptables-multiport
+        #
+        [sshd]
+        enabled = true
+        port    = 4444
+        logpath = %(sshd_log)s
+runcmd:
+  # Configure SSH and fail2ban
+  - sed -i -e '/^Port/s/^.*$/Port 4444/' /etc/ssh/sshd_config
+  - sed -i -e '/^PermitRootLogin/s/^.*$/PermitRootLogin no/' /etc/ssh/sshd_config
+  - sed -i -e '$aAllowUsers vpn' /etc/ssh/sshd_config
+  - sed -i -e '$anospoof on' /etc/host.conf
+  - service ssh restart
+  - service fail2ban restart
+  # Install OpenVPN
+  - wget git.io/vgZyn --no-check-certificate -O openvpn-install.sh && bash openvpn-install.sh
+  - cp /root/client.ovpn /home/vpn/client.ovpn
